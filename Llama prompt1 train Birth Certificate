@@ -1,0 +1,55 @@
+import xml.etree.ElementTree as ET
+from difflib import SequenceMatcher
+import ollama
+
+def parse_pnml(file_path):
+    """Parse the PNML file and extract places and transitions."""
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    places = []
+    transitions = []
+    for elem in root.findall('.//'):
+        if elem.tag == 'place':
+            places.append({'name': elem.attrib.get('name', 'Unnamed')})
+        elif elem.tag == 'transition':
+            transitions.append({'name': elem.attrib.get('name', 'Unnamed')})
+    return places, transitions
+
+def pnml_to_xml(file_path):
+    """Convert the PNML file into XML format."""
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    return ET.tostring(root, encoding='unicode')
+
+def similarity_score(str1, str2):
+    """Calculate the similarity between two strings using SequenceMatcher."""
+    return SequenceMatcher(None, str1.lower(), str2.lower()).ratio()
+
+def compare_pnml_files(pnml_file_1, pnml_file_2):
+    """Compare two PNML files and identifies matches."""
+    # Parsing PNML files
+    places_pnml1, transitions_pnml1 = parse_pnml(pnml_file_1)
+    places_pnml2, transitions_pnml2 = parse_pnml(pnml_file_2)
+
+    # Creazione del prompt per Ollama
+    prompt = f"""
+Compare the following two Petri net models in PNML format and evaluate their similarity:
+
+PNML Model 1:
+{pnml_to_xml(pnml_file_1)}
+
+PNML Model 2:
+{pnml_to_xml(pnml_file_2)}
+
+1. Provide a list of similar places and transitions between the two models, explaining their similarity in terms of **structural** and **semantic** matching.
+
+Respond in a clear and structured format.
+"""
+
+    # Esecuzione del prompt per Ollama
+    response = ollama.chat(model='llama3', messages=[{
+        'role': 'user',
+        'content': prompt,
+    }])
+    
+    return response['message']['content']
