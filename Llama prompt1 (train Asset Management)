@@ -1,0 +1,51 @@
+import ollama
+
+def compare_epml_files(epml_file_1, epml_file_2):
+    """Confronta due file EPML (EPC models) in formato XML e identifica le similarità tra i modelli."""
+
+    # 1. Creazione del prompt per Ollama
+    prompt = f"""Compare the following two EPML models (Event-driven Process Chains) in XML format and assess their similarity:
+
+EPML Model 1:
+{epml_file_1}
+
+EPML Model 2:
+{epml_file_2}
+
+Instructions:
+1. Provide a similarity matching score from 0 to 1, where 0 means no similarity and 1 means perfect similarity. Also include a brief explanation for the score.
+2. Identify one-to-one mappings between **functions** (activities) in both models based on their semantic meaning and structural role. Provide the mappings in a detailed list format, specifying each function in Model 1 and its corresponding function in Model 2, with a short explanation.
+3. Identify complex mappings:
+   - **1:N mappings**: where a single function in one model corresponds to multiple functions in the other model.
+     - If found, list them clearly with explanations.
+     - If none exist, explicitly state: "No 1:N mappings found."
+   - **N:M mappings**: where multiple functions in one model correspond to multiple functions in the other model.
+     - If found, list them clearly with explanations.
+     - If none exist, explicitly state: "No N:M mappings found."
+4. Compare the overall structure:
+   - Compare the number and role of **events**, **functions**, **connectors** (AND, OR, XOR), and **edges**.
+   - Highlight differences in the usage of logical connectors (e.g., AND/XOR/OR splits and joins).
+   - Describe any cycles, concurrency patterns, or significant structural differences.
+   - Point out any missing elements or additional structures.
+
+Respond in a clear, structured, and detailed format."""
+
+    # 2. Invio del prompt a Ollama e ricezione della risposta
+    response = ollama.chat(model='llama3', messages=[
+        {
+            'role': 'user',
+            'content': prompt,
+        },
+    ])
+
+    # 3. Estrazione del contenuto della risposta
+    response_content = response['message']['content']
+    
+    # 4. Stampa della risposta
+    print(f"Response:\n{response_content}")
+
+# Esegui il confronto con due file di esempio
+epml_file_1 = 'target-model.epml'
+epml_file_2 = 'source-model.epml'
+
+compare_epml_files(epml_file_1, epml_file_2)
