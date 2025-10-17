@@ -111,10 +111,6 @@ epml_files = [
     "source-model6.epml",
     "target-model7.epml",
     "source-model7.epml,
-    "target-model8.epml",
-    "source-model8.epml",
-    "target-model9.epml",
-    "source-model9.epml
     
 ]
 
