@@ -1,0 +1,141 @@
+import os
+from itertools import combinations
+import xml.etree.ElementTree as ET
+import ollama
+
+# Memoria globale degli errori
+global_error_log = []
+
+# ===========================
+# Funzioni BPMN
+# ===========================
+
+def extract_task_names(file_path):
+    """Estrae i nomi dei task da un file BPMN."""
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    ns = {'bpmn': 'http://www.omg.org/spec/BPMN/20100524/MODEL'}
+
+    task_names = []
+    for task_type in ['task', 'userTask', 'manualTask', 'serviceTask',
+                      'scriptTask', 'businessRuleTask', 'sendTask',
+                      'receiveTask', 'callActivity']:
+        for task in root.findall(f".//bpmn:{task_type}", ns):
+            name = task.attrib.get('name')
+            if name:
+                task_names.append(name)
+    return task_names
+
+def compare_bpmn_files(file1_path, file2_path):
+    """Confronta due modelli BPMN e stampa il risultato tramite Llama 3."""
+    name_1 = os.path.basename(file1_path)
+    name_2 = os.path.basename(file2_path)
+
+    tasks1 = extract_task_names(file1_path)
+    tasks2 = extract_task_names(file2_path)
+
+    prompt = f"""
+You are analyzing two BPMN models. Here are their task names:
+
+Model 1 ({name_1}):
+{chr(10).join(tasks1)}
+
+Model 2 ({name_2}):
+{chr(10).join(tasks2)}
+
+### Categories:
+- **VB (Verbatim / Identical)**: Task names are exactly the same, ignoring case and spacing.
+- **MC (Modified Copy / Slightly Modified)**: Task names differ slightly but describe the same activity.
+- **HR (Heavy Revision / Strongly Modified)**: Task names are related but differ significantly in wording, detail, or scope.
+
+### Your tasks:
+1. Compare the task lists and classify mappings into VB, MC, HR.  
+2. Provide metrics:
+   - Total tasks per model
+   - Number and percentage of VB, MC, HR mappings
+   - Overall similarity score (0–1)
+3. Identify potential **errors, inconsistencies, and difficulties** in the BPMN models.
+4. **LLM Error Report (MUST DO)**:
+   - Explicitly identify where your classification may be wrong.  
+   - For each possible error, state:
+     * The task pair(s) involved
+     * What classification you gave (VB, MC, HR, NA)
+     * What might be the correct classification instead
+     * Why this mismatch could happen
+   - Count the number of such errors for this comparison.
+   - Group errors into categories: False Positive, False Negative, Scope Mismatch, Overgeneralization, Ambiguity.  
+   - Provide at least 1 concrete example per error category (if present).
+5. End with a **Summary** that lists the total errors and types found for this pair.
+"""
+
+    response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
+    content = response['message']['content']
+
+    # Stampa subito il confronto
+    print(f"\n=== Comparison: {name_1} vs {name_2} ===\n")
+    print(content)
+    print("\n" + "="*80 + "\n")
+
+    # Salva l'output per analisi aggregata finale
+    global_error_log.append({
+        "pair": f"{name_1} vs {name_2}",
+        "report": content
+    })
+
+def batch_compare_bpmn_files(bpmn_files):
+    """Confronta tutte le combinazioni di file BPMN della lista."""
+    for file1, file2 in combinations(bpmn_files, 2):
+        try:
+            compare_bpmn_files(file1, file2)
+        except FileNotFoundError as e:
+            print(f"File non trovato: {e}")
+        except Exception as e:
+            print(f"Errore durante il confronto {file1} vs {file2}: {e}")
+
+    # Alla fine: riepilogo globale sugli errori frequenti
+    print("\n\n========== GLOBAL ERROR SUMMARY ==========\n")
+    error_categories = {
+        "False Positive": 0,
+        "False Negative": 0,
+        "Scope Mismatch": 0,
+        "Overgeneralization": 0,
+        "Ambiguity": 0
+    }
+
+    for entry in global_error_log:
+        text = entry["report"]
+        # Conta occorrenze per categoria in base al testo generato da LLM
+        for cat in error_categories.keys():
+            error_categories[cat] += text.count(cat)
+
+    print("Error categories across ALL comparisons:\n")
+    for cat, count in error_categories.items():
+        print(f"- {cat}: {count}")
+
+    print("\nExamples of recurring issues:\n")
+    for entry in global_error_log[:3]:  # Mostriamo esempi dalle prime 3 coppie
+        print(f"From {entry['pair']}:\n")
+        lines = entry["report"].splitlines()
+        examples = [l for l in lines if "Task" in l and ("False" in l or "Mismatch" in l)]
+        for ex in examples[:2]:
+            print("   ", ex.strip())
+        print()
+
+# ===========================
+# Lista dei file BPMN
+# ===========================
+
+bpmn_files = [
+    "Cologne.bpmn",
+    "Frankfurt.bpmn",
+    "IIS_Erlangen.bpmn",
+    "Fu_Berlin.bpmn",
+    "Hohenheim.bpmn",
+    "Potsdam.bpmn",
+    "Muenster.bpmn",
+    "Tu_Munich.bpmn",
+    "Wuerzburg.bpmn"
+]
+
+# Avvia il confronto per tutte le coppie
+batch_compare_bpmn_files(bpmn_files)
