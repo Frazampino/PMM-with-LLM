@@ -1,0 +1,126 @@
+import os
+import xml.etree.ElementTree as ET
+from itertools import combinations
+from difflib import SequenceMatcher
+import ollama
+
+# Memoria globale degli errori
+global_error_log = []
+
+# ===========================
+# Funzioni PNML
+# ===========================
+
+def parse_pnml(file_path):
+    """Estrae luoghi e transizioni da un file PNML."""
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    places = []
+    transitions = []
+    
+    for elem in root.findall('.//'):
+        if elem.tag == 'place':
+            places.append({'name': elem.attrib.get('name', 'Unnamed')})
+        elif elem.tag == 'transition':
+            transitions.append({'name': elem.attrib.get('name', 'Unnamed')})
+    
+    return places, transitions
+
+def pnml_to_xml(file_path):
+    """Convert PNML in string XML."""
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    return ET.tostring(root, encoding='unicode')
+
+def similarity_score(str1, str2):
+    """Calcola la similarità tra due stringhe."""
+    return SequenceMatcher(None, str1.lower(), str2.lower()).ratio()
+
+def compare_pnml_files(file1, file2):
+    """Confronta due modelli PNML tramite Llama 3."""
+    name1, name2 = os.path.basename(file1), os.path.basename(file2)
+    
+    places1, transitions1 = parse_pnml(file1)
+    places2, transitions2 = parse_pnml(file2)
+
+    prompt = f"""
+You are comparing two Petri net models in PNML format:
+
+Model 1 ({name1}):
+{pnml_to_xml(file1)}
+
+Model 2 ({name2}):
+{pnml_to_xml(file2)}
+
+### Tasks:
+
+1. List similar places and transitions, explaining similarity in terms of **structural** and **semantic** matching.
+2. Classify similarity:
+   - VB (Verbatim/Identical)
+   - MC (Modified Copy / Slightly Modified)
+   - HR (Heavy Revision / Strongly Modified)
+3. Identify potential errors, inconsistencies, and difficulties.
+4. Provide a summary of total errors and types.
+"""
+
+    response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
+    content = response['message']['content']
+
+    print(f"\n=== PNML Comparison: {name1} vs {name2} ===\n")
+    print(content)
+    print("\n" + "="*80 + "\n")
+
+    global_error_log.append({
+        "pair": f"{name1} vs {name2}",
+        "report": content
+    })
+
+# ===========================
+# Batch Comparison PNML
+# ===========================
+
+def batch_compare_pnml_files(pnml_files):
+    """Confronta tutte le combinazioni di file PNML."""
+    for f1, f2 in combinations(pnml_files, 2):
+        try:
+            compare_pnml_files(f1, f2)
+        except FileNotFoundError as e:
+            print(f"File non trovato: {e}")
+        except Exception as e:
+            print(f"Errore durante il confronto {f1} vs {f2}: {e}")
+
+    # Riepilogo globale errori
+    print("\n\n========== GLOBAL ERROR SUMMARY ==========\n")
+    error_categories = {
+        "False Positive": 0,
+        "False Negative": 0,
+        "Scope Mismatch": 0,
+        "Overgeneralization": 0,
+        "Ambiguity": 0
+    }
+
+    for entry in global_error_log:
+        text = entry["report"]
+        for cat in error_categories.keys():
+            error_categories[cat] += text.count(cat)
+
+    print("Error categories across ALL comparisons:\n")
+    for cat, count in error_categories.items():
+        print(f"- {cat}: {count}")
+
+# ===========================
+# Esecuzione
+# ===========================
+
+pnml_files = [
+    "birthCertificate_p31.pnml",
+    "birthCertificate_p32.pnml",
+    "birthCertificate_p33.pnml",
+    "birthCertificate_p34.pnml",
+    "birthCertificate_p246.pnml",
+    "birthCertificate_p247.pnml",
+    "birthCertificate_p248.pnml",
+    "birthCertificate_p250.pnml"
+]
+
+batch_compare_pnml_files(pnml_files)
